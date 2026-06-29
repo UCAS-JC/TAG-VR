@@ -699,32 +699,16 @@ fields:
 """,
         encoding="utf-8",
     )
+    label_prompt_template = (
+        Path(__file__).resolve().parents[1]
+        / "tag_vr_dataset"
+        / "configs"
+        / "label_prompt.yaml"
+    )
+    if not label_prompt_template.exists():
+        raise FileNotFoundError(f"Missing label-prompt template: {label_prompt_template}")
     (configs_dir / "label_prompt.yaml").write_text(
-        """# Prompt constraints used by scripts/annotate_cvpair_text.py
-language: zh_en
-annotation_levels:
-  - id_level_stable_description
-  - image_level_visible_attributes
-required_fields:
-  - description_zh
-  - description_en
-  - color
-  - vehicle_type
-  - orientation
-  - visible_parts
-  - occlusion
-  - scene_context
-  - confidence
-  - qa_status
-forbidden:
-  - Do not infer brand.
-  - Do not infer exact model.
-  - Do not use license plate numbers as identity features.
-  - Do not describe invisible details.
-  - Do not use parking slots, road texture, poles, or neighboring vehicles as stable identity attributes.
-uncertainty:
-  - Use uncertain for small targets, occlusion, low light, or ambiguous color/type.
-""",
+        label_prompt_template.read_text(encoding="utf-8"),
         encoding="utf-8",
     )
 
@@ -769,6 +753,15 @@ training basenames from `a2g` and `g2a` are materialized only once under
 - `benchmarks/visual_a2g.jsonl` and `benchmarks/visual_g2a.jsonl`: visual retrieval task indexes.
 - `configs/label_prompt.yaml`: annotation constraints for VLM labeling.
 - `qa/qa_report.md`: generation statistics, known issues, and risk notes.
+
+## Annotation Method
+
+The formal method is
+`tag_vr_vehicle_annotation_v4_evidence_locked_claim_audit_2026-06-29`.
+It separates per-image VLM A perception, program-owned consensus, fact-locked
+captioning, local schema/length/fact-coverage QA, and claim-level audit by a
+different VLM B family. Query/gallery identities and images always require
+human review.
 
 ## Usage Boundary
 
@@ -866,6 +859,12 @@ ID-level text coverage and image-level text coverage are not complete in this
 directory until the VLM annotation script is run and manually reviewed. The
 smoke-test annotation output should be stored under
 `annotations/cvpair_smoke_test/`.
+
+The current annotation method is
+`tag_vr_vehicle_annotation_v4_evidence_locked_claim_audit_2026-06-29`. It
+records per-image evidence, deterministic consensus, fact coverage, claim-level
+audit, and repair plus re-audit. All query/gallery identities and images
+require human review regardless of the automatic QA score.
 
 ## Known Risks
 

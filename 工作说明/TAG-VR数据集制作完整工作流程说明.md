@@ -428,6 +428,9 @@ agvot_tracklet_seq09_target01
 | `identity_confidence` | string | 身份可靠性 |
 | `description_zh` | string | 中文 ID 级稳定描述 |
 | `description_en` | string | 英文 ID 级稳定描述 |
+| `description_zh_variants` | array | 中文事实一致改写 |
+| `description_en_variants` | array | 英文事实一致改写 |
+| `caption_claims` | object | 按 canonical/paraphrase 保存原子 claim、claim type 和 fact IDs |
 | `color` | string | 颜色 |
 | `vehicle_type` | string | 粗粒度车型 |
 | `body_profile` | string | 车身轮廓 |
@@ -437,9 +440,17 @@ agvot_tracklet_seq09_target01
 | `special_marks` | array | 可见特殊标识 |
 | `stable_attributes` | array | 跨视角稳定属性 |
 | `uncertain_attributes` | array | 不确定属性 |
+| `schema_qa_status` | string | schema QA 结果 |
+| `fact_coverage_score` | number | ID stable fact 覆盖率 |
+| `uncertainty_coverage` | number | 不确定项原因覆盖率 |
+| `unsupported_claim_count` | integer | 无合法事实证据的 claim 数 |
+| `claim_audit_status` | string | 最终 VLM B claim 审计状态 |
+| `review_reasons` | array | 进入人工复核的原因 |
 | `qa_status` | string | QA 状态 |
 
 示例：
+
+以下示例仅展示基础字段；正式 v4 输出还必须包含 variants、`caption_claims` 和 QA 字段，具体结构以 `configs/label_prompt.yaml` 为准。
 
 ```json
 {
@@ -484,11 +495,22 @@ agvot_tracklet_seq09_target01
 | `background_distractors` | object | 背景干扰 |
 | `description_zh` | string | 中文图像级描述 |
 | `description_en` | string | 英文图像级描述 |
+| `description_zh_variants` | array | 中文事实一致改写 |
+| `description_en_variants` | array | 英文事实一致改写 |
+| `caption_claims` | object | 按 canonical/paraphrase 保存原子 claim、claim type 和 fact IDs |
 | `confidence` | number | 标注置信度 |
 | `uncertain_fields` | array | 不确定字段 |
+| `schema_qa_status` | string | schema QA 结果 |
+| `fact_coverage_score` | number | 当前图高置信度可见事实覆盖率 |
+| `uncertainty_coverage` | number | 当前图不确定项原因覆盖率 |
+| `unsupported_claim_count` | integer | 无合法事实证据的 claim 数 |
+| `claim_audit_status` | string | 最终 VLM B claim 审计状态 |
+| `review_reasons` | array | 进入人工复核的原因 |
 | `qa_status` | string | QA 状态 |
 
 示例：
+
+以下示例仅展示基础字段；正式 v4 输出还必须包含 variants、`caption_claims` 和 QA 字段，具体结构以 `configs/label_prompt.yaml` 为准。
 
 ```json
 {
@@ -564,10 +586,16 @@ ID 级描述只写跨视角稳定车辆属性：
 
 VLM 辅助标注要求：
 
-- 可使用 Qwen3-VL 等 VLM 做初始标注，但必须保留 prompt、模型名、模型版本、调用时间、API usage、错误重试和人工修改记录。
+- 正式标注采用 `tag_vr_vehicle_annotation_v4_evidence_locked_claim_audit_2026-06-29`，不能把单次自由 caption 调用作为最终标注。
+- VLM A 依次承担逐图结构化感知、同义词/冲突裁决、事实锁定 caption 生成和失败修复；VLM B 必须来自不同模型家族，只承担 claim-level 独立视觉审计。
+- VLM A 的逐图感知不能生成 caption 或判断稳定性；`stable` 只能由程序按“至少 1 张 ground 支持、至少 1 张 UAV 支持、规范化 value 一致、无未解决 conflict”产生。
+- caption 中每个正向事实必须引用一个合法 `fact_id`；事实表外观察必须通过 `new_observations` 回流感知和共识，不能直接写入 caption。
+- 本地必须同时执行 schema、长度、事实覆盖和不确定项覆盖 QA。ID coverage 不低于 0.80，图像 coverage 不低于 0.85，uncertainty coverage 为 1.00，任一无证据事实直接失败。
+- VLM B 在本地 QA 后审计，只看到原图、caption 和去除 VLM A confidence 的证据表。任一 claim 为 `contradicted` 或 `not_visible` 时，由 VLM A 修复、本地重检、VLM B 复审；仍失败则 `manual_review`。
+- 必须保留 prompt、A/B 模型名和模型家族、调用时间、API usage、错误重试、程序共识结果、claim 审计和人工修改记录。
 - 真实数据以图像可见内容为准。
 - 扩展数据若提供 bbox、track ID、类别、视角、位姿或时间戳等元数据，应优先保留为结构化字段；文本描述仍以图像可见内容为准。
-- 每个 ID 建议输入多张代表图生成稳定 ID 描述，避免逐图 caption 风格漂移。
+- 每个 ID 默认选择 2 张地面图和 2 张 UAV 图；逐图感知必须独立，避免地面图信息污染 UAV 判断。
 - 中文和英文描述都需要保留，便于中文项目沟通和英文 CLIP/VLM baseline 复用。
 
 ## 9. Benchmark 任务与字段对应关系
@@ -619,6 +647,8 @@ VLM 辅助标注要求：
 - 每个扩展数据源抽查至少 30 个车辆关联；不足 30 个则全量抽查。
 - 对 `weak_association`、小目标、重遮挡、多车混淆样本提高抽查比例。
 - 对 VLM 自动标注样本抽查颜色、车型、可见部件、遮挡和背景泄漏。
+- 检查 `schema_qa.jsonl`、`caption_length_qa.jsonl`、`fact_coverage_qa.jsonl`、`claim_audit.jsonl` 和 `claim_audit_summary.jsonl` 均有记录。
+- query/gallery 全量人工复核；训练 ID 按固定 seed 至少抽取 10%，并对低置信度、冲突、小目标和重遮挡样本提高比例。
 
 人工抽查通过率建议不低于 95%。未通过样本标记为 `manual_review`、`fixed` 或 `drop`。
 
